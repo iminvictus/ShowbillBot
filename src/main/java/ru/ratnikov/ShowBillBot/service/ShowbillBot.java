@@ -260,13 +260,14 @@ public class ShowbillBot extends TelegramLongPollingBot {
         SendMessage message = BotUtil.createMessageTemplate(chatId);
         if (events.isEmpty()) {
             message.setText(BotUtil.FOR_NO_REG_FOR_EVENTS);
+            executeMessage(message);
+            getAllEvents(chatId);
         }
         else {
             message.setText(BotUtil.FOR_PERSON_EVENT_LIST);
             BotUtil.prepareMessageWithEventsList(events, message);
+            executeMessage(message);
         }
-        executeMessage(message);
-        getAllEvents(chatId);
     }
 
     public void registerForEvent (long chatId, long eventId, long messageId) {
