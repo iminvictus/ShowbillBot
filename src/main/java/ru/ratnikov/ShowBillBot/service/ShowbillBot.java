@@ -166,30 +166,29 @@ public class ShowbillBot extends TelegramLongPollingBot {
 
     private void handleRegisteredUser(long incomingChatId, String incomingMessageText, Update update) {
         switch (incomingMessageText) {
-            case "/start":
-            case "Поехали":
-            case "Поехали!":
+            case BotUtil.START_COMM:
+            case BotUtil.START_COMM_TEXT_1:
+            case BotUtil.START_COMM_TEXT_2:
                 onStartCommand(update.getMessage());
                 break;
-            case "Ближайшие мероприятия":
-            case "/events":
+            case BotUtil.EVENTS_COMM:
+            case BotUtil.EVENTS_COMM_TEXT:
                 getAllEvents(incomingChatId);
                 break;
-            case "Помощь":
-            case "/help":
+            case BotUtil.HELP_COMM:
+            case BotUtil.HELP_COMM_TEXT:
                 sendMessageGetMenu(incomingChatId, BotUtil.HELP_MESSAGE);
                 break;
-            case "Мои мероприятия":
-            case "/signed":
+            case BotUtil.SIGNED_COMM:
+            case BotUtil.SIGNED_COMM_TEXT:
                 getEventByPerson(incomingChatId);
                 break;
-            case "Изменить данные":
-            case "/edit":
-                prepareAndSendMessage(incomingChatId, "Это пока не реализовано");
+            case BotUtil.EDIT_COMM:
+            case BotUtil.EDIT_COMM_TEXT:
+            case BotUtil.ADMIN_MODE_COMM:
+            case BotUtil.ADMIN_MODE_COMM_TEXT:
+                prepareAndSendMessage(incomingChatId, BotUtil.NOT_READY);
                 break;
-            case "Режим админа":
-            case "/admin":
-                prepareAndSendMessage(incomingChatId, "Это пока не реализовано");
             default:
                 prepareAndSendMessage(incomingChatId, BotUtil.UNKNOWN_COMMAND);
         }
@@ -197,10 +196,13 @@ public class ShowbillBot extends TelegramLongPollingBot {
 
     private void handleUnregisteredUser(Message message) {
         switch (message.getText()) {
-            case "/start":
+            case BotUtil.START_COMM:
+            case BotUtil.START_COMM_TEXT_1:
+            case BotUtil.START_COMM_TEXT_2:
                 onStartCommand(message);
                 break;
-            case "/help":
+            case BotUtil.HELP_COMM:
+            case BotUtil.HELP_COMM_TEXT:
                 sendMessageGetMenu(message.getChatId(), BotUtil.HELP_MESSAGE);
                 break;
             default:
