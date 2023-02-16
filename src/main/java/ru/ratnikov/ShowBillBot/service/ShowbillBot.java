@@ -2,8 +2,8 @@ package ru.ratnikov.ShowBillBot.service;
 
 import com.vdurmont.emoji.EmojiParser;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -17,7 +17,6 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMar
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import ru.ratnikov.ShowBillBot.config.BotConfig;
 import ru.ratnikov.ShowBillBot.model.Event;
 import ru.ratnikov.ShowBillBot.model.Person;
 import ru.ratnikov.ShowBillBot.repository.EventsRepository;
@@ -32,12 +31,14 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@Transactional
-public class TeleBotService extends TelegramLongPollingBot {
+public class ShowbillBot extends TelegramLongPollingBot {
 
     private final PeopleRepository peopleRepository;
     private final EventsRepository eventsRepository;
-    final BotConfig config;
+    private final String botUsername;
+    private final String botToken;
+    private final String botOwner;
+
     static final String HELP_MESSAGE = "Привет!\nС помощью этого бота можно" +
             " посмотреть список ближайших анонсированных мероприятий, узнать, где и когда они проходят," +
             " а также зарегистрироваться и пойти на интересующие лично тебя (если, конечно, есть свободные места!)" +
@@ -52,10 +53,19 @@ public class TeleBotService extends TelegramLongPollingBot {
     static final String CANCEL_REG_YES = "CANCEL_REG_YES";
     static final String CANCEL_REG_NO = "CANCEL_REG_NO";
 
-    public TeleBotService (BotConfig config, PeopleRepository peopleRepository, EventsRepository eventsRepository) {
-        this.config = config;
+    public ShowbillBot(
+            @Value("${bot.name}") String botUsername,
+            @Value("${bot.token}") String botToken,
+            @Value("${bot.name}")String botOwner,
+            PeopleRepository peopleRepository,
+            EventsRepository eventsRepository) throws TelegramApiException {
+
+        this.botUsername = botUsername;
+        this.botToken = botToken;
         this.peopleRepository = peopleRepository;
         this.eventsRepository = eventsRepository;
+        this.botOwner = botOwner;
+
         List<BotCommand> commandsList = new ArrayList<>();
         commandsList.add(new BotCommand("/start", "Начать общение с ботом"));
         commandsList.add(new BotCommand("/events", "Список доступных мероприятий"));
@@ -72,23 +82,23 @@ public class TeleBotService extends TelegramLongPollingBot {
 
     @Override
     public String getBotUsername() {
-        return config.getBotName();
+        return botUsername;
     }
 
     @Override
     public String getBotToken() {
-        return config.getToken();
+        return botToken;
     }
 
     @Override
     public void onUpdateReceived(Update update) {
 
         if(update.hasMessage() && update.getMessage().hasText()) {
-            String textMessage = update.getMessage().getText();
-            long chatId = update.getMessage().getChatId();
+            String incomingMessage = update.getMessage().getText();
+            long incomingChatId = update.getMessage().getChatId();
 
-            if (textMessage.contains("/send") && config.getOwnerId() == chatId) {
-                var textToSend = EmojiParser.parseToUnicode(textMessage.substring(textMessage.indexOf(" ")));
+            if (incomingMessage.contains("/send") && Long.parseLong(botOwner) == incomingChatId) {
+                var textToSend = EmojiParser.parseToUnicode(incomingMessage.substring(incomingMessage.indexOf(" ")));
                 var users = peopleRepository.findAll();
                 for (Person person: users) {
                     prepareAndSendMessage(person.getChatId(), textToSend);
@@ -96,28 +106,29 @@ public class TeleBotService extends TelegramLongPollingBot {
             }
 
             else {
-                switch (textMessage) {
+                switch (incomingMessage) {
                     case "/start":
-                        startCommand(update.getMessage(), chatId, update.getMessage().getChat().getFirstName());
+                        startCommand(update.getMessage(), incomingChatId, update.getMessage().getChat().getFirstName());
                         break;
                     case "Ближайшие мероприятия":
                     case "/events":
-                        getAllEvents(chatId);
+                        getAllEvents(incomingChatId);
                         break;
+                    case "Помощь":
                     case "/help":
-                        sendMessage(chatId, HELP_MESSAGE);
+                        sendMessage(incomingChatId, HELP_MESSAGE);
                         break;
                     case "Мои мероприятия":
                     case "/signed":
-                        getEventByPerson(chatId);
+                        getEventByPerson(incomingChatId);
                         break;
                     case "Изменить данные":
                     case "/edit":
                     default:
-                        if (peopleRepository.findByChatId(chatId).isEmpty()) {
-                            prepareAndSendMessage(chatId, "Сначала нужно зарегистрироваться. Отправь команду /start");
+                        if (peopleRepository.findByChatId(incomingChatId).isEmpty()) {
+                            prepareAndSendMessage(incomingChatId, "Сначала нужно зарегистрироваться. Отправь команду /start");
                         } else {
-                            prepareAndSendMessage(chatId, EmojiParser.parseToUnicode("Извини, этого я не понимаю " + ":pensive:" + "\nВоспользуйся меню!"));
+                            prepareAndSendMessage(incomingChatId, EmojiParser.parseToUnicode("Извини, этого я не понимаю " + ":pensive:" + "\nВоспользуйся меню!"));
                         }
                 }
             }
