@@ -13,27 +13,36 @@ import java.util.List;
 @Entity(name = "person")
 public class Person {
 
+    private static final String ID = "chat_id";
+    private static final String FIRST_NAME = "first_name";
+    private static final String LAST_NAME = "last_name";
+    private static final String USER_NAME = "user_name";
+    private static final String REGISTERED = "registered_at";
+    private static final String JOIN_TABLE = "person_event";
+    private static final String JOIN_COLUMN = "chat_id";
+    private static final String INV_JOIN_COLUMN = "event_id";
+
     @Id
-    @Column(name = "chat_id")
+    @Column(name = ID)
     private long chatId;
 
-    @Column(name = "first_name", length = 100)
+    @Column(name = FIRST_NAME, length = 100)
     private String firstName;
 
-    @Column(name = "last_name", length = 100)
+    @Column(name = LAST_NAME, length = 100)
     private String lastName;
 
-    @Column(name = "user_name", length = 100)
+    @Column(name = USER_NAME, length = 100)
     private String userName;
 
-    @Column(name = "registered_at")
+    @Column(name = REGISTERED)
     private Timestamp registeredAt;
 
     @ManyToMany(fetch = FetchType.EAGER, cascade = CascadeType.ALL)
     @JoinTable(
-            name = "person_event",
-            joinColumns = @JoinColumn(name = "chat_id"),
-            inverseJoinColumns = @JoinColumn(name = "event_id")
+            name = JOIN_TABLE,
+            joinColumns = @JoinColumn(name = JOIN_COLUMN),
+            inverseJoinColumns = @JoinColumn(name = INV_JOIN_COLUMN)
     )
     private List<Event> events;
 

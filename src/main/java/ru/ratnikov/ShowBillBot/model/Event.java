@@ -1,12 +1,10 @@
 package ru.ratnikov.ShowBillBot.model;
 
 import lombok.Data;
-import org.hibernate.annotations.Cascade;
 
 import javax.persistence.*;
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * @author Michael Gosling
@@ -14,25 +12,32 @@ import java.util.Objects;
 @Data
 @Entity(name = "event")
 public class Event {
+    private static final String ID = "event_id";
+    private static final String TITLE = "title";
+    private static final String DESCRIPTION = "description";
+    private static final String SEATS = "seats";
+    private static final String DATE = "date_of_event";
+    private static final String MAPPED_BY = "events";
+
     @Id
-    @Column(name = "event_id")
+    @Column(name = ID)
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long eventId;
 
-    @Column(name = "title", length = 200)
+    @Column(name = TITLE, length = 200)
     String title;
 
-    @Column(name = "description", length = 500)
+    @Column(name = DESCRIPTION, length = 500)
     String description;
 
-    @Column(name = "seats")
+    @Column(name = SEATS)
     int seats;
 
-    @Column(name = "date_of_event")
+    @Column(name = DATE)
     @Temporal(TemporalType.TIMESTAMP)
     Date date;
 
-    @ManyToMany(mappedBy = "events",
+    @ManyToMany(mappedBy = MAPPED_BY,
             fetch = FetchType.EAGER, cascade = CascadeType.PERSIST)
     private List<Person> people;
 

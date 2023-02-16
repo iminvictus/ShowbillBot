@@ -44,6 +44,20 @@ public class BotUtil {
     public static final String B_REG_NO = "REG_NO_BUTTON";
     public static final String B_CANCEL_REG_YES = "CANCEL_REG_YES";
     public static final String B_CANCEL_REG_NO = "CANCEL_REG_NO";
+    public static final String START_COMM = "/start";
+    public static final String START_COMM_TEXT_1 = "Поехали";
+    public static final String START_COMM_TEXT_2 = "Поехали!";
+    public static final String EVENTS_COMM = "/events";
+    public static final String EVENTS_COMM_TEXT = "Ближайшие мероприятия";
+    public static final String HELP_COMM = "/help";
+    public static final String HELP_COMM_TEXT = "Помощь";
+    public static final String SIGNED_COMM = "/signed";
+    public static final String SIGNED_COMM_TEXT = "Мои мероприятия";
+    public static final String EDIT_COMM = "/edit";
+    public static final String EDIT_COMM_TEXT = "Изменить данные";
+    public static final String ADMIN_MODE_COMM = "/admin";
+    public static final String ADMIN_MODE_COMM_TEXT = "Режим админа";
+    public static final String NOT_READY = "Это пока не реализовано";
 
     public static SendMessage createMessageTemplate(Person person) {
         return createMessageTemplate(person.getChatId());
@@ -54,25 +68,25 @@ public class BotUtil {
     static {
         List<KeyboardRow> keyboardRows = new ArrayList<>();
         KeyboardRow row = new KeyboardRow();
-        row.add("Ближайшие мероприятия");
-        row.add("Мои мероприятия");
+        row.add(EVENTS_COMM_TEXT);
+        row.add(SIGNED_COMM_TEXT);
         keyboardRows.add(row);
         row = new KeyboardRow();
-        row.add("Помощь");
-        row.add("Изменить данные");
+        row.add(HELP_COMM_TEXT);
+        row.add(EDIT_COMM_TEXT);
         keyboardRows.add(row);
         row = new KeyboardRow();
-        row.add("Режим админа");
+        row.add(ADMIN_MODE_COMM_TEXT);
         keyboardRows.add(row);
         keyboardMenuMarkup.setKeyboard(keyboardRows);
         keyboardMenuMarkup.setResizeKeyboard(true);
 
-        commandsList.add(new BotCommand("/start", "Начать общение с ботом"));
-        commandsList.add(new BotCommand("/events", "Список доступных мероприятий"));
-        commandsList.add(new BotCommand("/signed", "Моя афиша"));
-        commandsList.add(new BotCommand("/help", "Помощь"));
-        commandsList.add(new BotCommand("/edit", "Изменить данные"));
-        commandsList.add(new BotCommand("/admin", "Режим админа"));
+        commandsList.add(new BotCommand(START_COMM, "Начать общение с ботом"));
+        commandsList.add(new BotCommand(EVENTS_COMM, "Список доступных мероприятий"));
+        commandsList.add(new BotCommand(SIGNED_COMM, "Моя афиша"));
+        commandsList.add(new BotCommand(HELP_COMM, "Помощь"));
+        commandsList.add(new BotCommand(EDIT_COMM, "Изменить данные"));
+        commandsList.add(new BotCommand(ADMIN_MODE_COMM, "Режим админа"));
     }
 
     public static SendMessage createMessageTemplate(long chatId) {
