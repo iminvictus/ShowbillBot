@@ -37,6 +37,9 @@ public class Person {
     )
     private List<Event> events;
 
+    @Transient
+    private boolean isRegistered;
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -49,5 +52,9 @@ public class Person {
     public int hashCode() {
         var userNameHash = userName.hashCode();
         return (int)(31 * chatId) + (31 * userNameHash);
+    }
+
+    public boolean isRegistered() {
+        return !this.userName.isEmpty();
     }
 }

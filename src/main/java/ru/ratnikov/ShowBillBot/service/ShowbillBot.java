@@ -13,10 +13,9 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import ru.ratnikov.ShowBillBot.Util.BotUtil;
 import ru.ratnikov.ShowBillBot.model.Event;
 import ru.ratnikov.ShowBillBot.model.Person;
 import ru.ratnikov.ShowBillBot.repository.EventsRepository;
@@ -39,26 +38,12 @@ public class ShowbillBot extends TelegramLongPollingBot {
     private final String botToken;
     private final String botOwner;
 
-    static final String HELP_MESSAGE = "Привет!\nС помощью этого бота можно" +
-            " посмотреть список ближайших анонсированных мероприятий, узнать, где и когда они проходят," +
-            " а также зарегистрироваться и пойти на интересующие лично тебя (если, конечно, есть свободные места!)" +
-            "\n\nПросматривать афишу и регистрироваться можно на вкладке /events," +
-            " командой /signed можно увидеть список мероприятий, на которые ты зарегистрирован(а)," +
-            " если нужно отменить регистрацию, то напиши мне /cancel." +
-            "\n\nЕсли мероприятие отменится - я обязательно тебе сообщу!\n" +
-            "Также я предусмотрел возможность изменения регистрационных данных на вкладке /edit.";
-
-    static final String REG_YES = "REG_YES_BUTTON";
-    static final String REG_NO = "REG_NO_BUTTON";
-    static final String CANCEL_REG_YES = "CANCEL_REG_YES";
-    static final String CANCEL_REG_NO = "CANCEL_REG_NO";
-
     public ShowbillBot(
             @Value("${bot.name}") String botUsername,
             @Value("${bot.token}") String botToken,
             @Value("${bot.name}")String botOwner,
             PeopleRepository peopleRepository,
-            EventsRepository eventsRepository) throws TelegramApiException {
+            EventsRepository eventsRepository) {
 
         this.botUsername = botUsername;
         this.botToken = botToken;
@@ -66,18 +51,7 @@ public class ShowbillBot extends TelegramLongPollingBot {
         this.eventsRepository = eventsRepository;
         this.botOwner = botOwner;
 
-        List<BotCommand> commandsList = new ArrayList<>();
-        commandsList.add(new BotCommand("/start", "Начать общение с ботом"));
-        commandsList.add(new BotCommand("/events", "Список доступных мероприятий"));
-        commandsList.add(new BotCommand("/signed", "Моя афиша"));
-        commandsList.add(new BotCommand("/cancel", "Отменить регистрацию"));
-        commandsList.add(new BotCommand("/help", "Помощь"));
-        commandsList.add(new BotCommand("/edit", "Изменить данные"));
-        try {
-            this.execute(new SetMyCommands(commandsList, new BotCommandScopeDefault(), null));
-        } catch (TelegramApiException e) {
-            log.error("Error while initializing bot's commands list " + e.getMessage());
-        }
+        initializeMenuList();
     }
 
     @Override
@@ -90,134 +64,167 @@ public class ShowbillBot extends TelegramLongPollingBot {
         return botToken;
     }
 
+    private void initializeMenuList() {
+        List<BotCommand> commandsList = BotUtil.getBotCommandsList();
+        try {
+            this.execute(new SetMyCommands(commandsList, new BotCommandScopeDefault(), null));
+        } catch (TelegramApiException e) {
+            log.error("Error while initializing bot's commands list " + e.getMessage());
+        }
+    }
+
     @Override
     public void onUpdateReceived(Update update) {
 
         if(update.hasMessage() && update.getMessage().hasText()) {
-            String incomingMessage = update.getMessage().getText();
+            String incomingMessageText = update.getMessage().getText();
             long incomingChatId = update.getMessage().getChatId();
 
-            if (incomingMessage.contains("/send") && Long.parseLong(botOwner) == incomingChatId) {
-                var textToSend = EmojiParser.parseToUnicode(incomingMessage.substring(incomingMessage.indexOf(" ")));
-                var users = peopleRepository.findAll();
-                for (Person person: users) {
-                    prepareAndSendMessage(person.getChatId(), textToSend);
+            if (checkIfUserIsRegistered(incomingChatId)) {
+                if (incomingMessageText.contains("/send") && Long.parseLong(botOwner) == incomingChatId) {
+                    sendMessageToAll(incomingMessageText);
+                } else {
+                    handleRegisteredUser (incomingChatId, incomingMessageText, update);
                 }
             }
-
             else {
-                switch (incomingMessage) {
-                    case "/start":
-                        startCommand(update.getMessage(), incomingChatId, update.getMessage().getChat().getFirstName());
-                        break;
-                    case "Ближайшие мероприятия":
-                    case "/events":
-                        getAllEvents(incomingChatId);
-                        break;
-                    case "Помощь":
-                    case "/help":
-                        sendMessage(incomingChatId, HELP_MESSAGE);
-                        break;
-                    case "Мои мероприятия":
-                    case "/signed":
-                        getEventByPerson(incomingChatId);
-                        break;
-                    case "Изменить данные":
-                    case "/edit":
-                    default:
-                        if (peopleRepository.findByChatId(incomingChatId).isEmpty()) {
-                            prepareAndSendMessage(incomingChatId, "Сначала нужно зарегистрироваться. Отправь команду /start");
-                        } else {
-                            prepareAndSendMessage(incomingChatId, EmojiParser.parseToUnicode("Извини, этого я не понимаю " + ":pensive:" + "\nВоспользуйся меню!"));
-                        }
-                }
+                handleUnregisteredUser (update.getMessage());
             }
         } else if (update.hasCallbackQuery()) {
-            String callbackData = update.getCallbackQuery().getData();
-            long messageId = update.getCallbackQuery().getMessage().getMessageId();
-            long chatId = update.getCallbackQuery().getMessage().getChatId();
+            processCallbackQuery(update);
+        }
+    }
 
-            if (callbackData.contains(REG_YES)) {
-                registerForEvent(chatId, Long.parseLong(callbackData.replaceAll("\\D+", "")));
-                String text = "Вы зарегистрировались. Мероприятие отображено в Вашем списке";
-                executeEditMessageText(text, chatId, messageId);
-//                executeMessage(new SendMessage(String.valueOf(chatId), text));
-            } else if (callbackData.contains(REG_NO)) {
-                String text = "Возврат в меню";
-                executeEditMessageText(text, chatId, messageId);
+    private void processCallbackQuery(Update update) {
+        String callbackData = update.getCallbackQuery().getData();
+        long messageId = update.getCallbackQuery().getMessage().getMessageId();
+        long chatId = update.getCallbackQuery().getMessage().getChatId();
+
+        if (callbackData.contains(BotUtil.B_REG_YES)) {
+            long eventId = Long.parseLong(callbackData.replaceAll("\\D+", ""));
+            registerForEvent(chatId, eventId, messageId);
+            executeMessage(BotUtil.createMessageTemplate(chatId, BotUtil.EVENT_REGISTRATION_SUCCESS));
+        } else if (callbackData.contains(BotUtil.B_REG_NO)) {
+            long eventId = Long.parseLong(callbackData.replaceAll("\\D+", ""));
+            executeEditMessageText(getEventInfoNoReg(eventId), chatId, messageId);
+            executeMessage(BotUtil.createMessageTemplate(chatId, BotUtil.BACK_TO_MENU));
+        }
+        else if (callbackData.contains(BotUtil.B_CANCEL_REG_YES)) {
+            long eventId = eventsRepository.findById(Long.parseLong(callbackData.replaceAll("\\D+", ""))).get().getEventId();
+            cancelRegistration(chatId, eventId);
+            executeEditMessageText(BotUtil.REGISTRATION_CANCELLED, chatId, messageId);
+        }
+        else if (callbackData.contains(BotUtil.B_CANCEL_REG_NO)) {
+            executeEditMessageText(BotUtil.BACK_TO_MENU, chatId, messageId);
+        }
+        else if (eventsRepository.findById(Long.parseLong(callbackData)).isPresent()) {
+            long eventId = Long.parseLong(callbackData);
+            if (checkIfRegisteredForEvent(chatId, Long.parseLong(callbackData))) {
+                processRegisteredForEventPerson(chatId, eventId);
+            } else {
+                processUnregisteredForEventPerson(chatId, eventId);
             }
-            else if (callbackData.contains(CANCEL_REG_YES)) {
-                long eventId = eventsRepository.findById(Long.parseLong(callbackData.replaceAll("\\D+", ""))).get().getEventId();
-                String text = "Регистрация на мероприятие отменена";
-                executeEditMessageText(text, chatId, messageId);
-                cancelRegistration(chatId, eventId);
-            }
-            else if (callbackData.contains(CANCEL_REG_NO)) {
-                String text = "Возврат в меню";
-                executeEditMessageText(text, chatId, messageId);
-            }
-            else if (eventsRepository.findById(Long.parseLong(callbackData)).isPresent()) {
-                if (checkIfRegistered(chatId, Long.parseLong(callbackData))) {
-                    Event eventToShow = eventsRepository.findById(Long.parseLong(callbackData)).orElse(null);
-                    String text = "Мероприятие: " + eventToShow.getTitle() +
-                            "\n" + eventToShow.getDescription() +
-                            "\nКоличество мест: " + eventToShow.getSeats() +
-                            "\nДата и время: " + eventToShow.getDate()
-                            + "\nВы уже зарегистрированы на это мероприятие. Желаете отменить регистрацию?";
+        }
+    }
 
-                    SendMessage message = new SendMessage();
-                    message.setChatId(String.valueOf(chatId));
-                    message.setText(text);
-                    InlineKeyboardMarkup inlineMarkup = new InlineKeyboardMarkup();
-                    List<List<InlineKeyboardButton>> inlineRows = new ArrayList<>();
-                    List<InlineKeyboardButton> inlineRow = new ArrayList<>();
-                    var yesButton = new InlineKeyboardButton();
-                    yesButton.setText("Отменить регистрацию");
-                    yesButton.setCallbackData(CANCEL_REG_YES + eventToShow.getEventId());
+    private void processUnregisteredForEventPerson(long chatId, long eventId) {
+        Event eventToShow = eventsRepository.findById(eventId).orElse(null);
 
-                    var noButton = new InlineKeyboardButton();
-                    noButton.setText("Вернуться в меню");
-                    noButton.setCallbackData(CANCEL_REG_NO + eventToShow.getEventId());
+        if (eventToShow != null) {
+            String text = getEventInfoNoReg(eventId);
+            SendMessage message = BotUtil.createMessageTemplate(chatId, text);
+            InlineKeyboardMarkup inlineMarkup = createTwoInlinesForMessage(
+                    "Да", BotUtil.B_REG_YES + eventToShow.getEventId(),
+                    "Нет", BotUtil.B_REG_NO + eventToShow.getEventId());
+            message.setReplyMarkup(inlineMarkup);
 
-                    inlineRow.add(yesButton);
-                    inlineRow.add(noButton);
-                    inlineRows.add(inlineRow);
-                    inlineMarkup.setKeyboard(inlineRows);
-                    message.setReplyMarkup(inlineMarkup);
+            executeMessage(message);
+        }
+        else {
+            log.error("Tried to show event with id " + eventId + " which doesn't exists in db");
+        }
+    }
 
-                    executeMessage(message);
-                } else {
-                    Event eventToShow = eventsRepository.findById(Long.parseLong(callbackData)).orElse(null);
-//                    System.out.println(callbackData + " " + chatId);
-                    String text = "Мероприятие: " + eventToShow.getTitle() +
-                            "\n" + eventToShow.getDescription() +
-                            "\nКоличество мест: " + eventToShow.getSeats() +
-                            "\nДата и время: " + eventToShow.getDate()
-                            + "\nЖелаете записаться?";
+    private void processRegisteredForEventPerson(long chatId, long eventId) {
+        Event eventToShow = eventsRepository.findById(eventId).orElse(null);
 
-                    SendMessage message = new SendMessage();
-                    message.setChatId(String.valueOf(chatId));
-                    message.setText(text);
-                    InlineKeyboardMarkup inlineMarkup = new InlineKeyboardMarkup();
-                    List<List<InlineKeyboardButton>> inlineRows = new ArrayList<>();
-                    List<InlineKeyboardButton> inlineRow = new ArrayList<>();
-                    var yesButton = new InlineKeyboardButton();
-                    yesButton.setText("Да");
-                    yesButton.setCallbackData(REG_YES + eventToShow.getEventId());
+        if (eventToShow != null) {
+            String text = getEventInfoWithReg(eventId);
+            SendMessage message = BotUtil.createMessageTemplate(chatId, text);
 
-                    var noButton = new InlineKeyboardButton();
-                    noButton.setText("Нет");
-                    noButton.setCallbackData(REG_NO + eventToShow.getEventId());
+            InlineKeyboardMarkup inlineMarkup = createTwoInlinesForMessage(
+                    "Отменить регистрацию", BotUtil.B_CANCEL_REG_YES + eventToShow.getEventId(),
+                    "Вернуться в меню", BotUtil.B_CANCEL_REG_NO + eventToShow.getEventId());
+            message.setReplyMarkup(inlineMarkup);
 
-                    inlineRow.add(yesButton);
-                    inlineRow.add(noButton);
-                    inlineRows.add(inlineRow);
-                    inlineMarkup.setKeyboard(inlineRows);
-                    message.setReplyMarkup(inlineMarkup);
+            executeMessage(message);
+        }
+        else {
+            log.error("Tried to show event with id " + eventId + " which doesn't exists in db");
+        }
+    }
 
-                    executeMessage(message);
-                }
-            }
+    private void handleRegisteredUser(long incomingChatId, String incomingMessageText, Update update) {
+        switch (incomingMessageText) {
+            case "/start":
+            case "Поехали":
+            case "Поехали!":
+                onStartCommand(update.getMessage());
+                break;
+            case "Ближайшие мероприятия":
+            case "/events":
+                getAllEvents(incomingChatId);
+                break;
+            case "Помощь":
+            case "/help":
+                sendMessageGetMenu(incomingChatId, BotUtil.HELP_MESSAGE);
+                break;
+            case "Мои мероприятия":
+            case "/signed":
+                getEventByPerson(incomingChatId);
+                break;
+            case "Изменить данные":
+            case "/edit":
+                prepareAndSendMessage(incomingChatId, "Это пока не реализовано");
+                break;
+            case "Режим админа":
+            case "/admin":
+                prepareAndSendMessage(incomingChatId, "Это пока не реализовано");
+            default:
+                prepareAndSendMessage(incomingChatId, BotUtil.UNKNOWN_COMMAND);
+        }
+    }
+
+    private void handleUnregisteredUser(Message message) {
+        switch (message.getText()) {
+            case "/start":
+                onStartCommand(message);
+                break;
+            case "/help":
+                sendMessageGetMenu(message.getChatId(), BotUtil.HELP_MESSAGE);
+                break;
+            default:
+                prepareAndSendMessage(message.getChatId(), BotUtil.NEED_TO_REGISTER);
+        }
+    }
+
+    private void onStartCommand(Message message) {
+        long chatId = message.getChatId();
+        if (!peopleRepository.findByChatId(chatId).isEmpty()) {
+            sendMessageGetMenu(chatId, BotUtil.ALREADY_REGISTERED);
+        }
+        else {
+            registerUser(message);
+            sendMessageGetMenu(chatId, "Привет, " + message.getChat().getFirstName() + BotUtil.BOT_REGISTRATION_SUCCESS);
+            log.info("Replied on start to newly registered user " + message.getChat().getUserName());
+        }
+    }
+
+    private void sendMessageToAll(String message) {
+        var textToSend = EmojiParser.parseToUnicode(message.substring(message.indexOf(" ")));
+        var users = peopleRepository.findAll();
+        for (Person person: users) {
+            prepareAndSendMessage(person.getChatId(), textToSend);
         }
     }
 
@@ -240,121 +247,69 @@ public class ShowbillBot extends TelegramLongPollingBot {
 
     private void getAllEvents(long chatId) {
         List<Event> events = eventsRepository.findAll();
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText("Список предстоящих мероприятий ниже. Для просмотра информации нажмите на интересующее событие.");
-        InlineKeyboardMarkup inlineMarkup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> inlineRows = new ArrayList<>();
-
-        for(Event event: events) {
-            List<InlineKeyboardButton> inlineRow = new ArrayList<>();
-            var eventButton = new InlineKeyboardButton();
-            eventButton.setText(event.getTitle());
-            eventButton.setCallbackData(String.valueOf(event.getEventId()));
-            inlineRow.add(eventButton);
-            inlineRows.add(inlineRow);
-        }
-
-        inlineMarkup.setKeyboard(inlineRows);
-        message.setReplyMarkup(inlineMarkup);
+        SendMessage message = BotUtil.createMessageTemplate(chatId);
+        message.setText(BotUtil.FOR_ALL_EVENT_LIST);
+        BotUtil.prepareMessageWithEventsList(events, message);
         executeMessage(message);
     }
 
     public void getEventByPerson (long chatId) {
         List<Event> events = peopleRepository.findByChatId(chatId).get(0).getEvents();
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText("Список мероприятий, на которые вы зарегистрированы." +
-                "\nДля отмены регистрации нажмите на мероприятие");
-        InlineKeyboardMarkup inlineMarkup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> inlineRows = new ArrayList<>();
-
-        for(Event event: events) {
-            List<InlineKeyboardButton> inlineRow = new ArrayList<>();
-            var eventButton = new InlineKeyboardButton();
-            eventButton.setText(event.getTitle());
-            eventButton.setCallbackData(String.valueOf(event.getEventId()));
-            inlineRow.add(eventButton);
-            inlineRows.add(inlineRow);
+        SendMessage message = BotUtil.createMessageTemplate(chatId);
+        if (events.isEmpty()) {
+            message.setText(BotUtil.FOR_NO_REG_FOR_EVENTS);
         }
-
-        inlineMarkup.setKeyboard(inlineRows);
-        message.setReplyMarkup(inlineMarkup);
+        else {
+            message.setText(BotUtil.FOR_PERSON_EVENT_LIST);
+            BotUtil.prepareMessageWithEventsList(events, message);
+        }
         executeMessage(message);
+        getAllEvents(chatId);
     }
 
-    public void registerForEvent (long chatId, long eventId) {
+    public void registerForEvent (long chatId, long eventId, long messageId) {
         Event eventToRegister = eventsRepository.findById(eventId).orElse(null);
-        Person personToRegister = peopleRepository.findByChatId(chatId).get(0);
-        personToRegister.getEvents().add(eventToRegister);
-        eventToRegister.setSeats(eventToRegister.getSeats() - 1);
-        peopleRepository.save(personToRegister);
-        eventsRepository.save(eventToRegister);
-        log.info("Registered user with chatId " + chatId + " on event with id " + eventId);
+        if (eventToRegister != null) {
+            Person personToRegister = peopleRepository.findByChatId(chatId).get(0);
+            personToRegister.getEvents().add(eventToRegister);
+            eventToRegister.setSeats(eventToRegister.getSeats() - 1);
+            peopleRepository.save(personToRegister);
+            eventsRepository.save(eventToRegister);
+            executeEditMessageText(getEventInfoNoReg(eventId), chatId, messageId);
+            log.info("Registered user with chatId " + chatId + " on event with id " + eventId);
+        }
+        else
+            log.error("Tried to get event with id " + eventId + " which doesn't exists in db");
     }
 
     public void cancelRegistration(long chatId, long eventId) {
         Event eventToCancelReg = eventsRepository.findById(eventId).orElse(null);
         Person personToCancelReg = peopleRepository.findByChatId(chatId).get(0);
-        personToCancelReg.getEvents().remove(eventToCancelReg);
-        peopleRepository.save(personToCancelReg);
-        eventToCancelReg.getPeople().remove(personToCancelReg);
-        eventToCancelReg.setSeats(eventToCancelReg.getSeats() + 1);
-        eventsRepository.save(eventToCancelReg);
-        log.info("Deleted registration for user with chatId " + chatId + " for event with id " + eventId);
+        if (personToCancelReg != null && eventToCancelReg != null) {
+            personToCancelReg.getEvents().remove(eventToCancelReg);
+            peopleRepository.save(personToCancelReg);
+            eventToCancelReg.getPeople().remove(personToCancelReg);
+            eventToCancelReg.setSeats(eventToCancelReg.getSeats() + 1);
+            eventsRepository.save(eventToCancelReg);
+            getAllEvents(chatId);
+            log.info("Deleted registration for user with chatId " + chatId + " for event with id " + eventId);
+        }
+        else
+            log.error("Tried to get event with id " + eventId + " and person with id " + chatId + "  which don't exists in db");
     }
 
-    private void startCommand(Message message, long chatId, String name) {
-        if (!peopleRepository.findByChatId(chatId).isEmpty()) {
-            String answer = EmojiParser.parseToUnicode("Ты уже зарегистрирован(а). :white_check_mark:\nСписок доступных команд можно посмотреть в меню," +
-                            " или отправь /help, чтобы получить справку.");
-            sendMessage(chatId, answer);
-        }
-        else {
-            registerUser(message);
-            String answer = EmojiParser.parseToUnicode("Привет, " + name + ", поздравляю с регистрацией! :blush:\nОткрой меню, чтобы увидеть список команд," +
-                    " или отправь /help, чтобы получить справку.");
-            sendMessage(chatId, answer);
-            log.info("Replied on start to newly registered user " + name);
-        }
-    }
-
-    private void sendMessage(long chatId, String textToSend) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(textToSend);
-
-        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
-        List<KeyboardRow> keyboardRows = new ArrayList<>();
-        KeyboardRow row = new KeyboardRow();
-        row.add("Ближайшие мероприятия");
-        row.add("Мои мероприятия");
-        keyboardRows.add(row);
-        row = new KeyboardRow();
-        row.add("Помощь");
-        row.add("Изменить данные");
-        keyboardRows.add(row);
-        row = new KeyboardRow();
-        row.add("Режим админа");
-        keyboardRows.add(row);
-        keyboardMarkup.setKeyboard(keyboardRows);
-        keyboardMarkup.setResizeKeyboard(true);
-
-        message.setReplyMarkup(keyboardMarkup);
-
+    private void sendMessageGetMenu(long chatId, String textToSend) {
+        SendMessage message = BotUtil.createMessageTemplateWithMenu(chatId, textToSend);
         executeMessage(message);
     }
 
     private void executeEditMessageText (String text, long chatId, long messageId) {
-        EditMessageText message = new EditMessageText();
-        message.setChatId(String.valueOf(chatId));
-        message.setText(text);
-        message.setMessageId(Integer.parseInt(String.valueOf(messageId)));
+        EditMessageText message = BotUtil.createEditMessageTextTemplate(text, chatId, messageId);
 
         try {
             execute(message);
         } catch (TelegramApiException e) {
-            log.error("Error while sending an answer with inline button: " + e.getMessage());
+            log.error("Error while editing a chat message: " + e.getMessage());
         }
     }
 
@@ -374,7 +329,27 @@ public class ShowbillBot extends TelegramLongPollingBot {
         executeMessage(message);
     }
 
-    private boolean checkIfRegistered(long chatId, long eventId) {
+    private InlineKeyboardMarkup createTwoInlinesForMessage (String buttonOneText, String buttonOneCommand,
+                                                             String buttonTwoText, String buttonTwoCommand) {
+        InlineKeyboardMarkup inlineMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> inlineRows = new ArrayList<>();
+        List<InlineKeyboardButton> inlineRow = new ArrayList<>();
+        var yesButton = BotUtil.createInlineKeyboardButton(buttonOneText, buttonOneCommand);
+        var noButton = BotUtil.createInlineKeyboardButton(buttonTwoText, buttonTwoCommand);
+
+        inlineRow.add(yesButton);
+        inlineRow.add(noButton);
+        inlineRows.add(inlineRow);
+        inlineMarkup.setKeyboard(inlineRows);
+
+        return inlineMarkup;
+    }
+
+    private boolean checkIfUserIsRegistered(long chatId) {
+        return !peopleRepository.findByChatId(chatId).isEmpty();
+    }
+
+    private boolean checkIfRegisteredForEvent(long chatId, long eventId) {
         Person personToCheck = peopleRepository.findByChatId(chatId).get(0);
         List<Event> events = personToCheck.getEvents();
         for (Event event : events) {
@@ -382,5 +357,27 @@ public class ShowbillBot extends TelegramLongPollingBot {
                 return true;
         }
         return false;
+    }
+
+    private String getEventInfo (long eventId) {
+        Event event = eventsRepository.findById(eventId).orElse(null);
+        if (event != null) {
+            return "Мероприятие: " + event.getTitle() +
+                    "\n" + event.getDescription() +
+                    "\nКоличество мест: " + event.getSeats() +
+                    "\nДата и время: " + event.getDate();
+        }
+        else {
+            log.error("Tried to get info for event with id " + eventId + " which doesn't exist ind db");
+            return null;
+        }
+    }
+
+    private String getEventInfoNoReg (long eventId) {
+        return getEventInfo(eventId) + "\nЖелаете записаться?";
+    }
+
+    private String getEventInfoWithReg (long eventId) {
+        return getEventInfo(eventId) + "\nВы уже зарегистрированы на это мероприятие. Желаете отменить регистрацию?";
     }
 }
